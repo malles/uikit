@@ -138,6 +138,16 @@
                 }
             });
 
+            UI.$html.on("focus", "input, select, textarea", function(e) {
+
+                var target = UI.$(e.target);
+
+                if (active && target[0] != dropdown[0] && !target.data("datepicker") && !target.parents(".uk-datepicker:first").length) {
+                    active.hide();
+                }
+
+            });
+
             UI.$html.on("click.datepicker.uikit", function(e) {
 
                 var target = UI.$(e.target);
