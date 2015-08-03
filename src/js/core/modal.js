@@ -1,3 +1,40 @@
+(function($) {
+    function visible( element ) {
+        return $.expr.filters.visible( element ) &&
+            !$( element ).parents().addBack().filter( function() {
+                return $.css( this, "visibility" ) === "hidden";
+            } ).length;
+    }
+    function focusable( element, hasTabindex ) {
+        var map, mapName, img,
+            nodeName = element.nodeName.toLowerCase();
+        if ( "area" === nodeName ) {
+            map = element.parentNode;
+            mapName = map.name;
+            if ( !element.href || !mapName || map.nodeName.toLowerCase() !== "map" ) {
+                return false;
+            }
+            img = $( "img[usemap='#" + mapName + "']" )[ 0 ];
+            return !!img && visible( img );
+        }
+        return ( /^(input|select|textarea|button|object)$/.test( nodeName ) ?
+                !element.disabled :
+                "a" === nodeName ?
+                element.href || hasTabindex :
+                    hasTabindex ) &&
+                // the element and all of its ancestors must be visible
+            visible( element );
+    }
+    $.extend( $.expr[ ":" ], {
+        tabbable: function( element ) {
+            var tabIndex = $.attr( element, "tabindex" ),
+                hasTabindex = tabIndex != null;
+            return ( !hasTabindex || tabIndex >= 0 ) && focusable( element, hasTabindex );
+        }
+    });
+}(jQuery));
+
+
 (function(UI) {
 
     "use strict";
@@ -28,7 +65,9 @@
             this.paddingdir = "padding-" + (UI.langdirection == 'left' ? "right":"left");
             this.dialog     = this.find(".uk-modal-dialog");
 
-            this.active     = false;
+            //ensure dialog is focusable
+            this.dialog.attr('tabindex', 0);
+            this.active       = false;
 
             // Update ARIA
             this.element.attr('aria-hidden', this.element.hasClass("uk-open"));
@@ -55,6 +94,9 @@
             if (!this.element.length) return;
 
             var $this = this;
+
+            //remember last focused element to return to it on modal close
+            this.lastFocused = $(':focus');
 
             if (this.isActive()) return;
 
@@ -84,11 +126,26 @@
 
             UI.Utils.checkDisplay(this.dialog, true);
 
+            //initial focus to dialog for accessibility
+            this.dialog.focus();
+
+            //circular tabbing for accessibility, has to happen in show
+            //since invisible elements are not tabbable
+            var lastTabbable = this.dialog.find(':tabbable').last();
+
+            lastTabbable.on('keydown', function(e) {
+                var keyCode = e.keyCode || e.which;
+                console.log('tabbed');
+                if (keyCode == 9) {
+                    e.preventDefault();
+                    $this.dialog.focus();
+                }
+            });
+
             return this;
         },
 
         hide: function(force) {
-
             if (!force && UI.support.transition) {
 
                 var $this = this;
@@ -118,7 +175,7 @@
             if (!this.updateScrollable() && this.options.center) {
 
                 var dh  = this.dialog.outerHeight(),
-                pad = parseInt(this.dialog.css('margin-top'), 10) + parseInt(this.dialog.css('margin-bottom'), 10);
+                    pad = parseInt(this.dialog.css('margin-top'), 10) + parseInt(this.dialog.css('margin-bottom'), 10);
 
                 if ((dh + pad) < window.innerHeight) {
                     this.dialog.css({'top': (window.innerHeight/2 - dh/2) - pad });
@@ -138,9 +195,9 @@
                 scrollable.css("height", 0);
 
                 var offset = Math.abs(parseInt(this.dialog.css("margin-top"), 10)),
-                dh     = this.dialog.outerHeight(),
-                wh     = window.innerHeight,
-                h      = wh - 2*(offset < 20 ? 20:offset) - dh;
+                    dh     = this.dialog.outerHeight(),
+                    wh     = window.innerHeight,
+                    h      = wh - 2*(offset < 20 ? 20:offset) - dh;
 
                 scrollable.css("height", h < this.options.minScrollHeight ? "":h);
 
@@ -168,6 +225,10 @@
             if(active===this) active = false;
 
             this.trigger("hide.uk.modal");
+
+            if(this.lastFocused) {
+                this.lastFocused.focus();
+            }
         },
 
         isActive: function() {
@@ -274,7 +335,7 @@
 
         var modal = UI.modal.dialog(([
             '<div class="uk-margin uk-modal-content">'+String(content)+'</div>',
-            '<div class="uk-modal-footer uk-text-right"><button class="uk-button uk-modal-close">'+options.labels.Cancel+'</button> <button class="uk-button uk-button-primary js-modal-confirm">'+options.labels.Ok+'</button></div>'
+            '<div class="uk-modal-footer uk-text-right"><button class="uk-button uk-button-primary js-modal-confirm">'+options.labels.Ok+'</button> <button class="uk-button uk-modal-close">'+options.labels.Cancel+'</button></div>'
         ]).join(""), options);
 
         modal.element.find(".js-modal-confirm").on("click", function(){
@@ -284,7 +345,7 @@
 
         modal.on('show.uk.modal', function(){
             setTimeout(function(){
-                modal.element.find('.js-modal-confirm').focus();
+                modal.element.find('button:first').focus();
             }, 50);
         });
 
@@ -297,16 +358,16 @@
         options  = UI.$.extend(true, {bgclose:false, keyboard:false, modal:false, labels:UI.modal.labels}, options);
 
         var modal = UI.modal.dialog(([
-            text ? '<div class="uk-modal-content uk-form">'+String(text)+'</div>':'',
-            '<div class="uk-margin-small-top uk-modal-content uk-form"><p><input type="text" class="uk-width-1-1"></p></div>',
-            '<div class="uk-modal-footer uk-text-right"><button class="uk-button uk-modal-close">'+options.labels.Cancel+'</button> <button class="uk-button uk-button-primary js-modal-ok">'+options.labels.Ok+'</button></div>'
-        ]).join(""), options),
+                text ? '<div class="uk-modal-content uk-form">'+String(text)+'</div>':'',
+                '<div class="uk-margin-small-top uk-modal-content uk-form"><p><input type="text" class="uk-width-1-1"></p></div>',
+                '<div class="uk-modal-footer uk-text-right"><button class="uk-button uk-button-primary js-modal-ok">'+options.labels.Ok+'</button> <button class="uk-button uk-modal-close">'+options.labels.Cancel+'</button></div>'
+            ]).join(""), options),
 
-        input = modal.element.find("input[type='text']").val(value || '').on('keyup', function(e){
-            if (e.keyCode == 13) {
-                modal.element.find(".js-modal-ok").trigger('click');
-            }
-        });
+            input = modal.element.find("input[type='text']").val(value || '').on('keyup', function(e){
+                if (e.keyCode == 13) {
+                    modal.element.find(".js-modal-ok").trigger('click');
+                }
+            });
 
         modal.element.find(".js-modal-ok").on("click", function(){
             if (onsubmit(input.val())!==false){
@@ -356,11 +417,11 @@
                 modal.persist.data("modalPersistParent", content.parent());
             }
         }else if (typeof content === 'string' || typeof content === 'number') {
-                // just insert the data as innerHTML
-                content = UI.$('<div></div>').html(content);
+            // just insert the data as innerHTML
+            content = UI.$('<div></div>').html(content);
         }else {
-                // unsupported data type!
-                content = UI.$('<div></div>').html('UIkit.modal Error: Unsupported data type: ' + typeof content);
+            // unsupported data type!
+            content = UI.$('<div></div>').html('UIkit.modal Error: Unsupported data type: ' + typeof content);
         }
 
         content.appendTo(modal.element.find('.uk-modal-dialog'));
